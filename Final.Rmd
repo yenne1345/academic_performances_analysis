@@ -1,0 +1,156 @@
+---
+title: "DA101 - Final Project"
+author: "Yen Nguyen"
+date: "2023-04-26"
+output:
+  html_document:
+    toc_float:
+      toc_collapsed: true
+    code_folding: hide
+    theme: united
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(ggfortify)
+library(GGally)
+```
+
+# Data Preparation
+## Data Cleaning
+
+```{r}
+studentData <- read.csv("student-por.csv")
+
+ggplot(data = studentData, aes(y = G3)) + 
+  geom_boxplot(color = "black", fill = "lightblue") + 
+  labs(y = "Final Grade (G3)") +
+  ggtitle("Boxplot of Final Grades")
+```
+
+The boxplot shows there are some outliers in the grades. Therefore, we have to remove the outliers which are those with grades lower than 5 to make the distribution normal and improve the accuracy of finding the factors affecting the final grades.
+
+```{r}
+#remove outliers
+studentData <- studentData %>% filter(G3 >= 5)
+```
+
+# Data Wrangling
+
+From the dataset, we will focus on the variables such as sex, Weekend alcohol consumption(Dalc), Workday alcohol consumption(Walc), Students’ Final grade(G3), Father's education(Fedu), and Mother's education(Medu). 
+
+Since there are a small number of students whose parents do not live together and the dataset does not provide information on whether they live with their mother or father, we have decided to focus our analysis on students whose parents' cohabitation status is "together" (Pstatus = T). This subset of data is likely to provide more accurate and meaningful insights into the factors affecting student performance. This subset of data comprises approximately 90% of the students in the dataset.
+
+```{r}
+studentData <- studentData %>% select("sex", "Walc" , "Dalc", "Pstatus", "Medu", "Fedu", "G3")
+studentData <- studentData %>% filter(Pstatus == "T")
+```
+
+# Data Exploration
+
+## Heatmap
+
+We will use a heatmap to explore the relationship between different factors and their impact on final grades in our dataset. This visualization will provide us with a clear overview of the correlation between the variables and help us identify any strong positive or negative relationships between them.
+
+```{r}
+# Convert 'sex' to numeric (F = 1, M = 0)
+studentData$sex <- ifelse(studentData$sex == "M", 0, 1)
+# Compute the correlation matrix
+correlation_matrix <- cor(studentData[c("sex", "Walc" , "Dalc", "Medu", "Fedu", "G3")])
+
+# Convert the correlation matrix into a dataframe
+correlation_df <- as.data.frame(as.table(correlation_matrix))
+
+# Rename columns
+colnames(correlation_df) <- c("Var1", "Var2", "Correlation")
+
+# Create the heatmap
+ggplot(correlation_df, aes(x = Var1, y = Var2, fill = Correlation)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue4") +
+  theme_minimal() +
+  labs(x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "right")
+```
+
+## Adding new variables
+
+The parental education composite variable (“parent_edu”) and the weekly alcohol consumption composite variable (“alc”) are calculated using the following formulas:
+
+$alc = \frac{(Walc \times 2 + Dalc \times 5)}{7}$
+
+$\text{parent_edu} = \frac{(Medu + Fedu)}{2}$
+
+The results are rounded to the nearest number and turned into categorical values with different factors to be used in the regression model.
+
+```{r}
+studentData <- studentData %>% mutate(alc = ceiling((Walc*2 + Dalc*5)/7))
+studentData <- studentData %>% mutate(parent_edu = ceiling((Medu + Fedu)/2))
+```
+
+## Boxplots
+
+We will generate boxplots to visualize the distribution of final grades (G3) across different levels of parental education and alcohol consumption. This allows us to compare the distributions of final grades between groups and identify any potential relationships or patterns between the variables in our dataset.
+
+```{r}
+# Define custom labels for alcohol consumption levels
+alc_labels <- c("Very Low", "Low", "Moderate", "High", "Very High")
+
+# Generate boxplots with automatic colors and custom labels
+ggplot(studentData, aes(x = factor(parent_edu), y = G3, fill = factor(alc))) +
+  geom_boxplot() +
+  labs(x = "Parental Education", y = "Final Grade (G3)", fill = "Alcohol Consumption") +
+  scale_fill_discrete(name = "Alcohol Consumption", labels = alc_labels) + # Specify custom labels
+  theme_minimal() 
+```
+
+# Statistical Analysis and Interpretation
+## T-test to compare two sex groups
+
+Analyze the relationship between students' gender and their academic performance in Math and Portuguese
+
+```{r}
+studentData$sex <- ifelse(studentData$sex == 0, "M", "F")
+
+#Check for assumptions
+ggplot(data = studentData, aes(x = G3, fill = sex)) +
+  geom_histogram(color = "black", alpha = 0.7, binwidth = 1) +
+  facet_wrap(~sex) + 
+  labs(x = "The distribution of final grade", y = "Frequency") +
+   theme(plot.title = element_text(hjust = 0.5))
+```
+```{r}
+# t.test
+t.test(data = studentData, G3 ~ sex)
+```
+## Multiple linear regression to predict the final grades 
+
+We perform a multiple linear regression model to find the relationship among gender,
+family background, alcohol consumption, and students’ final grade. In this model, gender is
+represented by the dummy variable “sex” which takes a value of 0 for Male and 1 for Female.
+Family background is represented by the ordinal variable “parent_edu” that shows the 5 education levels of students’ parents (0-4). Alcohol consumption is represented by the ordinal variable “alc” with 5 different consumption levels (1-5).
+
+```{r}
+# Change sex to numeric variables (M = 0, F = 1)
+studentData$sex <- ifelse(studentData$sex == "M", 0, 1)
+# Handle ordinal variables by defining levels and labels for ordinal variables
+studentData$alc <- factor(studentData$alc, levels = 1:5, labels = c("Very Low", "Low", "Moderate", "High", "Very High"))
+studentData$parent_edu <- factor(studentData$parent_edu, levels = 0:4, labels = c("No education", "Primary", "5th-9th Grade", "Secondary", "Higher"))
+
+# Fit the linear regression model
+model <- lm(G3 ~ sex + alc + parent_edu, data = studentData)
+
+# Display summary of the model
+summary(model)
+```
+
+
+```{r}
+# Check for assumptions
+autoplot(model)
+```
