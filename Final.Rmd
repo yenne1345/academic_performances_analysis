@@ -1,6 +1,6 @@
 ---
 title: "DA101 - Final Project"
-author: "Yen Nguyen"
+author: "Yen Nguyen, Hanh Nguyen"
 date: "2023-04-26"
 output:
   html_document:
